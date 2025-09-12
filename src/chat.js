@@ -315,9 +315,8 @@ async function processMessages() {
                 log(`Создан mock order: ${JSON.stringify(mockOrder)}`, 'c');
                 
                 // Send follow-up message immediately for testing
-                const { sendFollowUpMessage } = global.sales;
                 log(`Вызов sendFollowUpMessage для пользователя ${chat.userName}`, 'c');
-                await sendFollowUpMessage(mockOrder);
+                await global.sales.sendFollowUpMessage(mockOrder);
                 
                 // Send Telegram notification for the test
                 if(global.telegramBot && settings.newOrderNotification) {
