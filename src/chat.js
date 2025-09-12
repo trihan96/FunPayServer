@@ -316,7 +316,15 @@ async function processMessages() {
                 
                 // Send follow-up message immediately for testing
                 log(`Вызов sendFollowUpMessage для пользователя ${chat.userName}`, 'c');
-                await global.sales.sendFollowUpMessage(mockOrder);
+                if (global.sales && typeof global.sales.sendFollowUpMessage === 'function') {
+                    await global.sales.sendFollowUpMessage(mockOrder);
+                } else {
+                    log(`Ошибка: sendFollowUpMessage не является функцией или global.sales не определен`, 'r');
+                    log(`global.sales: ${typeof global.sales}`, 'r');
+                    if (global.sales) {
+                        log(`Свойства global.sales: ${Object.keys(global.sales)}`, 'r');
+                    }
+                }
                 
                 // Send Telegram notification for the test
                 if(global.telegramBot && settings.newOrderNotification) {
