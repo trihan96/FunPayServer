@@ -75,12 +75,13 @@ global.account = await import('./account.js');
 global.categories = await import('./categories.js');
 global.goods = await import('./goods.js');
 global.activity = await import('./activity.js');
-global.chat = await import('./chat.js');
 global.sales = await import('./sales.js');
+global.chat = await import('./chat.js');
 
 // Loops
 global.runner = (await import('./runner.js')).default;
 global.telegram = (await import('./telegram.js')).default;
 
 let a;
+export { a };
 export { a };
