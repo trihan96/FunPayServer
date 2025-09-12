@@ -82,6 +82,6 @@ global.chat = await import('./chat.js');
 global.runner = (await import('./runner.js')).default;
 global.telegram = (await import('./telegram.js')).default;
 
-let a;
-export { a };
-export { a };
+// Export statement
+let moduleExport;
+export { moduleExport as a };
