@@ -4,28 +4,76 @@ const clone = global.clone;
 const fetch = global.fetch;
 const log = global.log;
 const parseDOM = global.DOMParser;
-const { sendMessage } = global.chat;
 const { load, updateFile, getConst } = global.storage;
 
 // CONSTANTS
 const goodsfilePath = 'data/configs/delivery.json';
 const settings = global.settings;
-let goods = await load(goodsfilePath);
+let goods = []; // Initialize as empty array
 let backupOrders = [];
 
-async function enableAutoIssue() {
-    backupOrders = await getOrders();
+// Store for scheduled follow-up messages
+const followUpMessages = new Map();
 
-    if(goods == undefined) {
-        log(`Не удалось запустить автовыдачу, т.к. товары не были загружены.`, 'r');
-        return false;
+// Function to enable auto-issue functionality
+function enableAutoIssue() {
+    log(`Автовыдача запущена.`, 'g');
+}
+
+// Function to clear all scheduled follow-up messages
+function clearFollowUpMessages() {
+    for(const [orderId, scheduledMessage] of followUpMessages.entries()) {
+        clearTimeout(scheduledMessage.timeoutId);
     }
+    followUpMessages.clear();
+    log('Все запланированные follow-up сообщения отменены', 'c');
+}
 
-    log(`Автовыдача запущена, загружено ${c.yellowBright(goods.length)} товара(ов).`, 'g');
+// Function to send follow-up message
+async function sendFollowUpMessage(order) {
+    try {
+        log(`sendFollowUpMessage вызван для заказа: ${JSON.stringify(order)}`, 'c');
+        
+        // Check if follow-up messages are enabled
+        if (!settings.followUpMessage) {
+            log(`Follow-up сообщения отключены в настройках`, 'c');
+            return;
+        }
+        
+        // Use customizable message text from settings, with fallback to default
+        let message = settings.followUpMessageText || 'Спасибо за покупку! После всех проверок зайдите пожалуйста в покупки и нажмите "подтвердить заказ" по ссылке https://funpay.com/orders/{order_id}/';
+        
+        // Replace the order ID placeholder
+        message = message.replace('{order_id}', order.id.replace('#', ''));
+        
+        // Replace \n with actual newline character
+        message = message.replace(/\\n/g, '\n');
+        
+        log(`Текст сообщения: ${message}`, 'c');
+        
+        // Pass false for customNode to use the node as-is
+        const result = await global.chat.sendMessage(order.buyerId, message, false, 'auto');
+        
+        log(`Результат отправки сообщения: ${JSON.stringify(result)}`, 'c');
+        
+        if(result) {
+            log(`Отправлено follow-up сообщение покупателю ${c.yellowBright(order.buyerName)} по заказу ${c.yellowBright(order.id)}`);
+            
+            // Remove from scheduled messages
+            followUpMessages.delete(order.id);
+        } else {
+            log(`Не удалось отправить follow-up сообщение покупателю ${order.buyerName} по заказу ${order.id}`, 'r');
+        }
+    } catch (err) {
+        log(`Ошибка при отправке follow-up сообщения: ${err}`, 'r');
+    }
 }
 
 async function checkForNewOrders() {
     try {
+        // Load goods data
+        goods = await load(goodsfilePath);
+        
         let orders = [];
 
         log(`Проверяем на наличие новых заказов...`, 'c');
@@ -44,11 +92,29 @@ async function checkForNewOrders() {
                 return;
             }
 
+            log(`Обнаружен новый заказ ${c.yellowBright(order.id)} от покупателя ${c.yellowBright(order.buyerName)} на сумму ${c.yellowBright(order.price)} ₽.`, 'g');
+            
             if(global.telegramBot && settings.newOrderNotification) {
                 global.telegramBot.sendNewOrderNotification(order);
             }
     
             log(`Новый заказ ${c.yellowBright(order.id)} от покупателя ${c.yellowBright(order.buyerName)} на сумму ${c.yellowBright(order.price)} ₽.`);
+
+            // Schedule follow-up message if enabled
+            if(settings.followUpMessage) {
+                log(`Запланировано follow-up сообщение для заказа ${c.yellowBright(order.id)} через 15 минут`, 'c');
+                
+                // Schedule the message to be sent in 15 minutes (900000 ms)
+                const timeoutId = setTimeout(() => {
+                    sendFollowUpMessage(order);
+                }, 900000); // 15 minutes
+                
+                // Store the timeout ID so we can cancel if needed
+                followUpMessages.set(order.id, {
+                    timeoutId: timeoutId,
+                    order: order
+                });
+            }
 
             for(let i = 0; i < order.count; i++) {
                 await issueGood(order.buyerId, order.buyerName, order.name, 'id');
@@ -104,7 +170,7 @@ async function issueGood(buyerIdOrNode, buyerName, goodName, type = 'id') {
                 customNode = true;
             }
             
-            result = await sendMessage(node, message, customNode, 'auto');
+            result = await global.chat.sendMessage(node, message, customNode, 'auto');
             
             if(result) {
                 log(`Товар "${c.yellowBright(goodName)}" выдан покупателю ${c.yellowBright(buyerName)} с сообщением:`);
@@ -316,4 +382,4 @@ async function getLotNames() {
     }
 }
 
-export { getOrders, getNewOrders, issueGood, getLotNames, searchOrdersByUserName, checkForNewOrders, getGood, addDeliveredName, enableAutoIssue };
+export { getOrders, getNewOrders, issueGood, getLotNames, searchOrdersByUserName, checkForNewOrders, getGood, addDeliveredName, enableAutoIssue, clearFollowUpMessages, sendFollowUpMessage };
