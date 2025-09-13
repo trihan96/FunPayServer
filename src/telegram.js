@@ -571,12 +571,61 @@ class TelegramBot {
 
         try {
             ctx.reply(`♻️ Загружаю файл...`);
-
-            let file_path = await this.bot.telegram.getFileLink(file_id);
-            let fileContents = await fetch(file_path);
-            contents = await fileContents.text();
+            
+            log(`Попытка загрузки файла автовыдачи: ${file_name}, file_id: ${file_id}`, 'c');
+            
+            // Use Telegraf's built-in file downloading capability
+            try {
+                // Get file info first
+                const fileInfo = await this.bot.telegram.getFile(file_id);
+                log(`Получена информация о файле автовыдачи: ${JSON.stringify(fileInfo)}`, 'g');
+                
+                // Use Telegraf's internal method to download the file
+                const fileUrl = `https://api.telegram.org/file/bot${this.bot.token}/${fileInfo.file_path}`;
+                
+                // Try downloading with node-fetch
+                const fetchOptions = {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+                    }
+                };
+                
+                log(`Попытка загрузки файла автовыдачи по URL: ${fileUrl}`, 'c');
+                
+                const response = await fetch(fileUrl, fetchOptions);
+                log(`Ответ от Telegram API для автовыдачи: ${response.status} ${response.statusText}`, 'c');
+                
+                if (!response.ok) {
+                    // If direct fetch fails, try alternative approach
+                    log(`Прямая загрузка не удалась, пробуем альтернативный метод`, 'c');
+                    
+                    // Try with different User-Agent
+                    const altFetchOptions = {
+                        method: 'GET',
+                        headers: {
+                            'User-Agent': 'Telegram-Bot-SDK/1.0'
+                        }
+                    };
+                    
+                    const altResponse = await fetch(fileUrl, altFetchOptions);
+                    if (!altResponse.ok) {
+                        throw new Error(`Telegram API вернул ошибку: ${altResponse.status} ${altResponse.statusText}`);
+                    }
+                    
+                    contents = await altResponse.text();
+                } else {
+                    contents = await response.text();
+                }
+                
+                log(`Содержимое файла автовыдачи загружено, длина: ${contents.length}`, 'g');
+            } catch (fetchError) {
+                log(`Ошибка при загрузке файла автовыдачи из Telegram: ${fetchError}`, 'r');
+                throw new Error(`Не удалось загрузить файл автовыдачи из Telegram: ${fetchError.message}`);
+            }
         } catch(e) {
-            ctx.reply(`❌ Не удалось загрузить файл.`, this.mainKeyboard.reply());
+            log(`Ошибка при загрузке файла автовыдачи: ${e}`, 'r');
+            ctx.reply(`❌ Не удалось загрузить файл: ${e.message}`, this.mainKeyboard.reply());
             return;
         }
 
@@ -587,7 +636,8 @@ class TelegramBot {
             await updateFile(json, 'data/configs/delivery.json');
             ctx.reply(`✔️ Окей, обновил файл автовыдачи.`, this.editGoodsKeyboard.reply());
         } catch(e) {
-            ctx.reply(`❌ Неверный формат JSON.`, this.mainKeyboard.reply());
+            log(`Ошибка при разборе JSON файла автовыдачи: ${e}`, 'r');
+            ctx.reply(`❌ Неверный формат JSON: ${e.message}`, this.mainKeyboard.reply());
         }
     }
 
@@ -1076,38 +1126,55 @@ class TelegramBot {
             ctx.reply(`♻️ Загружаю файл...`);
             
             log(`Попытка загрузки файла настроек: ${file_name}, file_id: ${file_id}`, 'c');
-
-            // Get file link from Telegram
-            let file_path;
-            try {
-                file_path = await this.bot.telegram.getFileLink(file_id);
-                log(`Получена ссылка на файл настроек: ${file_path}`, 'g');
-            } catch (linkError) {
-                log(`Ошибка получения ссылки на файл настроек: ${linkError}`, 'r');
-                throw new Error(`Не удалось получить ссылку на файл настроек: ${linkError.message}`);
-            }
             
-            // Fetch file content
-            let fileContents;
+            // Use Telegraf's built-in file downloading capability
             try {
-                fileContents = await fetch(file_path);
-                log(`Ответ от Telegram API для настроек: ${fileContents.status} ${fileContents.statusText}`, 'c');
+                // Get file info first
+                const fileInfo = await this.bot.telegram.getFile(file_id);
+                log(`Получена информация о файле настроек: ${JSON.stringify(fileInfo)}`, 'g');
                 
-                if (!fileContents.ok) {
-                    throw new Error(`Telegram API вернул ошибку: ${fileContents.status} ${fileContents.statusText}`);
+                // Use Telegraf's internal method to download the file
+                const fileUrl = `https://api.telegram.org/file/bot${this.bot.token}/${fileInfo.file_path}`;
+                
+                // Try downloading with node-fetch
+                const fetchOptions = {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+                    }
+                };
+                
+                log(`Попытка загрузки файла настроек по URL: ${fileUrl}`, 'c');
+                
+                const response = await fetch(fileUrl, fetchOptions);
+                log(`Ответ от Telegram API для настроек: ${response.status} ${response.statusText}`, 'c');
+                
+                if (!response.ok) {
+                    // If direct fetch fails, try alternative approach
+                    log(`Прямая загрузка не удалась, пробуем альтернативный метод`, 'c');
+                    
+                    // Try with different User-Agent
+                    const altFetchOptions = {
+                        method: 'GET',
+                        headers: {
+                            'User-Agent': 'Telegram-Bot-SDK/1.0'
+                        }
+                    };
+                    
+                    const altResponse = await fetch(fileUrl, altFetchOptions);
+                    if (!altResponse.ok) {
+                        throw new Error(`Telegram API вернул ошибку: ${altResponse.status} ${altResponse.statusText}`);
+                    }
+                    
+                    contents = await altResponse.text();
+                } else {
+                    contents = await response.text();
                 }
-            } catch (fetchError) {
-                log(`Ошибка при получении файла настроек из Telegram: ${fetchError}`, 'r');
-                throw new Error(`Не удалось получить файл настроек из Telegram: ${fetchError.message}`);
-            }
-            
-            // Get text content
-            try {
-                contents = await fileContents.text();
+                
                 log(`Содержимое файла настроек загружено, длина: ${contents.length}`, 'g');
-            } catch (textError) {
-                log(`Ошибка при чтении содержимого файла настроек: ${textError}`, 'r');
-                throw new Error(`Не удалось прочитать содержимое файла настроек: ${textError.message}`);
+            } catch (fetchError) {
+                log(`Ошибка при загрузке файла настроек из Telegram: ${fetchError}`, 'r');
+                throw new Error(`Не удалось загрузить файл настроек из Telegram: ${fetchError.message}`);
             }
 
             ctx.reply(`♻️ Проверяю валидность...`);
@@ -1266,39 +1333,57 @@ class TelegramBot {
             
             log(`Попытка загрузки файла: ${file.file_name}, file_id: ${file.file_id}`, 'c');
             
-            // Get file link from Telegram
-            let file_path;
-            try {
-                file_path = await this.bot.telegram.getFileLink(file.file_id);
-                log(`Получена ссылка на файл: ${file_path}`, 'g');
-            } catch (linkError) {
-                log(`Ошибка получения ссылки на файл: ${linkError}`, 'r');
-                throw new Error(`Не удалось получить ссылку на файл: ${linkError.message}`);
-            }
-            
-            // Fetch file content
-            let fileContents;
-            try {
-                fileContents = await fetch(file_path);
-                log(`Ответ от Telegram API: ${fileContents.status} ${fileContents.statusText}`, 'c');
-                
-                if (!fileContents.ok) {
-                    throw new Error(`Telegram API вернул ошибку: ${fileContents.status} ${fileContents.statusText}`);
-                }
-            } catch (fetchError) {
-                log(`Ошибка при получении файла из Telegram: ${fetchError}`, 'r');
-                throw new Error(`Не удалось получить файл из Telegram: ${fetchError.message}`);
-            }
-            
-            // Get text content
+            // Use Telegraf's built-in file downloading capability
             let contents;
             try {
-                contents = await fileContents.text();
+                // Get file info first
+                const fileInfo = await this.bot.telegram.getFile(file.file_id);
+                log(`Получена информация о файле: ${JSON.stringify(fileInfo)}`, 'g');
+                
+                // Use Telegraf's internal method to download the file
+                // This avoids manual URL construction and handles authentication properly
+                const fileUrl = `https://api.telegram.org/file/bot${this.bot.token}/${fileInfo.file_path}`;
+                
+                // Try downloading with node-fetch first
+                const fetchOptions = {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+                    }
+                };
+                
+                log(`Попытка загрузки файла по URL: ${fileUrl}`, 'c');
+                
+                const response = await fetch(fileUrl, fetchOptions);
+                log(`Ответ от Telegram API: ${response.status} ${response.statusText}`, 'c');
+                
+                if (!response.ok) {
+                    // If direct fetch fails, try alternative approach
+                    log(`Прямая загрузка не удалась, пробуем альтернативный метод`, 'c');
+                    
+                    // Try with different User-Agent
+                    const altFetchOptions = {
+                        method: 'GET',
+                        headers: {
+                            'User-Agent': 'Telegram-Bot-SDK/1.0'
+                        }
+                    };
+                    
+                    const altResponse = await fetch(fileUrl, altFetchOptions);
+                    if (!altResponse.ok) {
+                        throw new Error(`Telegram API вернул ошибку: ${altResponse.status} ${altResponse.statusText}`);
+                    }
+                    
+                    contents = await altResponse.text();
+                } else {
+                    contents = await response.text();
+                }
+                
                 log(`Содержимое файла загружено, длина: ${contents.length}`, 'g');
                 log(`Первые 200 символов содержимого: ${contents.substring(0, 200)}`, 'c');
-            } catch (textError) {
-                log(`Ошибка при чтении содержимого файла: ${textError}`, 'r');
-                throw new Error(`Не удалось прочитать содержимое файла: ${textError.message}`);
+            } catch (fetchError) {
+                log(`Ошибка при загрузке файла из Telegram: ${fetchError}`, 'r');
+                throw new Error(`Не удалось загрузить файл из Telegram: ${fetchError.message}`);
             }
             
             // Parse JSON
@@ -1364,7 +1449,7 @@ class TelegramBot {
             pauseAutoResponseForUser(targetUser, minutes);
             
             // Send confirmation message
-            ctx.answerCbQuery(`⏸️ Пауза активирована для ${targetUser} на ${minutes} мин.`);
+            ctx.answerCbQuery(`⏲️ Пауза активирована для ${targetUser} на ${minutes} мин.`);
             
             // Also send a message to show the action was successful
             const confirmationMsg = `⏸️ <b>Пауза активирована</b>\n\n` +
