@@ -597,6 +597,7 @@ class TelegramBot {
 
     getChatID() {
         let chatId = getConst('chatId');
+        log(`Получение Chat ID из настроек. Значение: ${chatId}`, 'c');
         if(!chatId) {
             log(`Напишите своему боту в Telegram, чтобы он мог отправлять вам уведомления.`);
             return false;
@@ -665,11 +666,22 @@ class TelegramBot {
         msg += `🛍️ <b>Товар:</b> <code>${order.name}</code>`;
 
         let chatId = this.getChatID();
-        if(!chatId) return;
-        this.bot.telegram.sendMessage(chatId, msg, {
-            parse_mode: 'HTML',
-            disable_web_page_preview: true
-        });
+        log(`Попытка отправки уведомления о новом заказе ${order.id} в Telegram. Chat ID: ${chatId}`, 'c');
+        
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о заказе ${order.id}`, 'r');
+            return;
+        }
+        
+        try {
+            await this.bot.telegram.sendMessage(chatId, msg, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            });
+            log(`Уведомление о новом заказе ${order.id} успешно отправлено в Telegram`, 'g');
+        } catch (error) {
+            log(`Ошибка при отправке уведомления о заказе ${order.id} в Telegram: ${error}`, 'r');
+        }
     }
 
     async sendLotsRaiseNotification(category, nextTimeMsg) {
@@ -912,6 +924,8 @@ class TelegramBot {
             settingsText += `• autoResponse: <code>${settings.autoResponse}</code>\n`;
             settingsText += `• greetingMessage: <code>${settings.greetingMessage}</code>\n`;
             settingsText += `• greetingMessageText: <code>${settings.greetingMessageText}</code>\n`;
+            settingsText += `• followUpMessage: <code>${settings.followUpMessage}</code>\n`;
+            settingsText += `• followUpMessageText: <code>${settings.followUpMessageText}</code>\n`;
             settingsText += `• watermark: <code>${settings.watermark}</code>\n`;
             settingsText += `• telegramWatermark: <code>${settings.telegramWatermark}</code>\n\n`;
             
@@ -937,7 +951,7 @@ class TelegramBot {
     
     changeSettingValue(ctx) {
         ctx.replyWithHTML(
-            `✏️ <b>Изменение настройки</b>\n\nВведите настройку в формате:\n<code>параметр: значение</code>\n\nПример:\n<code>greetingMessage: 1</code>\n<code>greetingMessageText: Привет! Как дела?</code>\n<code>watermark: [ 🔥MyBot ]</code>`,
+            `✏️ <b>Изменение настройки</b>\n\nВведите настройку в формате:\n<code>параметр: значение</code>\n\nПример:\n<code>greetingMessage: 1</code>\n<code>greetingMessageText: Привет! Как дела?</code>\n<code>watermark: [ 🔥MyBot ]</code>\n<code>followUpMessageText: Спасибо за покупку! Подтвердите заказ по ссылке https://funpay.com/orders/{order_id}/</code>`,
             this.backKeyboard.reply()
         );
         this.waitingForSettingValue = true;
@@ -990,7 +1004,8 @@ class TelegramBot {
             const validParameters = [
                 'alwaysOnline', 'lotsRaise', 'goodsStateCheck', 'autoIssue', 'autoResponse',
                 'greetingMessage', 'greetingMessageText', 'watermark', 'telegramWatermark',
-                'newMessageNotification', 'newOrderNotification', 'lotsRaiseNotification', 'deliveryNotification'
+                'newMessageNotification', 'newOrderNotification', 'lotsRaiseNotification', 'deliveryNotification',
+                'followUpMessage', 'followUpMessageText'
             ];
             
             if (!validParameters.includes(parameter)) {
@@ -1002,7 +1017,7 @@ class TelegramBot {
             let processedValue = value;
             if (['alwaysOnline', 'lotsRaise', 'goodsStateCheck', 'autoIssue', 'autoResponse', 
                 'greetingMessage', 'newMessageNotification', 'newOrderNotification', 
-                'lotsRaiseNotification', 'deliveryNotification'].includes(parameter)) {
+                'lotsRaiseNotification', 'deliveryNotification', 'followUpMessage'].includes(parameter)) {
                 processedValue = parseInt(value);
                 if (isNaN(processedValue) || (processedValue !== 0 && processedValue !== 1)) {
                     log(`Неверное числовое значение для ${parameter}: ${value}`, 'r');
@@ -1059,16 +1074,42 @@ class TelegramBot {
 
         try {
             ctx.reply(`♻️ Загружаю файл...`);
+            
+            log(`Попытка загрузки файла настроек: ${file_name}, file_id: ${file_id}`, 'c');
 
-            let file_path = await this.bot.telegram.getFileLink(file_id);
-            let fileContents = await fetch(file_path);
-            contents = await fileContents.text();
-        } catch(e) {
-            ctx.reply(`❌ Не удалось загрузить файл.`, this.editSettingsKeyboard.reply());
-            return;
-        }
+            // Get file link from Telegram
+            let file_path;
+            try {
+                file_path = await this.bot.telegram.getFileLink(file_id);
+                log(`Получена ссылка на файл настроек: ${file_path}`, 'g');
+            } catch (linkError) {
+                log(`Ошибка получения ссылки на файл настроек: ${linkError}`, 'r');
+                throw new Error(`Не удалось получить ссылку на файл настроек: ${linkError.message}`);
+            }
+            
+            // Fetch file content
+            let fileContents;
+            try {
+                fileContents = await fetch(file_path);
+                log(`Ответ от Telegram API для настроек: ${fileContents.status} ${fileContents.statusText}`, 'c');
+                
+                if (!fileContents.ok) {
+                    throw new Error(`Telegram API вернул ошибку: ${fileContents.status} ${fileContents.statusText}`);
+                }
+            } catch (fetchError) {
+                log(`Ошибка при получении файла настроек из Telegram: ${fetchError}`, 'r');
+                throw new Error(`Не удалось получить файл настроек из Telegram: ${fetchError.message}`);
+            }
+            
+            // Get text content
+            try {
+                contents = await fileContents.text();
+                log(`Содержимое файла настроек загружено, длина: ${contents.length}`, 'g');
+            } catch (textError) {
+                log(`Ошибка при чтении содержимого файла настроек: ${textError}`, 'r');
+                throw new Error(`Не удалось прочитать содержимое файла настроек: ${textError.message}`);
+            }
 
-        try {
             ctx.reply(`♻️ Проверяю валидность...`);
 
             // Write the new settings file
@@ -1082,7 +1123,7 @@ class TelegramBot {
             log(`Файл настроек обновлен через Telegram`, 'g');
         } catch(e) {
             log(`Ошибка при обновлении файла настроек: ${e}`, 'r');
-            ctx.reply(`❌ Ошибка при сохранении файла настроек.`, this.editSettingsKeyboard.reply());
+            ctx.reply(`❌ Ошибка при сохранении файла настроек: ${e.message}`, this.editSettingsKeyboard.reply());
         }
     }
     
@@ -1221,18 +1262,74 @@ class TelegramBot {
         }
         
         try {
-            ctx.replyWithHTML('♾️ Обрабатываю...');
+            ctx.replyWithHTML('♻️ Обрабатываю...');
             
-            let file_path = await this.bot.telegram.getFileLink(file.file_id);
-            let fileContents = await fetch(file_path);
-            let contents = await fileContents.text();
-            let json = JSON.parse(contents);
+            log(`Попытка загрузки файла: ${file.file_name}, file_id: ${file.file_id}`, 'c');
             
+            // Get file link from Telegram
+            let file_path;
+            try {
+                file_path = await this.bot.telegram.getFileLink(file.file_id);
+                log(`Получена ссылка на файл: ${file_path}`, 'g');
+            } catch (linkError) {
+                log(`Ошибка получения ссылки на файл: ${linkError}`, 'r');
+                throw new Error(`Не удалось получить ссылку на файл: ${linkError.message}`);
+            }
+            
+            // Fetch file content
+            let fileContents;
+            try {
+                fileContents = await fetch(file_path);
+                log(`Ответ от Telegram API: ${fileContents.status} ${fileContents.statusText}`, 'c');
+                
+                if (!fileContents.ok) {
+                    throw new Error(`Telegram API вернул ошибку: ${fileContents.status} ${fileContents.statusText}`);
+                }
+            } catch (fetchError) {
+                log(`Ошибка при получении файла из Telegram: ${fetchError}`, 'r');
+                throw new Error(`Не удалось получить файл из Telegram: ${fetchError.message}`);
+            }
+            
+            // Get text content
+            let contents;
+            try {
+                contents = await fileContents.text();
+                log(`Содержимое файла загружено, длина: ${contents.length}`, 'g');
+                log(`Первые 200 символов содержимого: ${contents.substring(0, 200)}`, 'c');
+            } catch (textError) {
+                log(`Ошибка при чтении содержимого файла: ${textError}`, 'r');
+                throw new Error(`Не удалось прочитать содержимое файла: ${textError.message}`);
+            }
+            
+            // Parse JSON
+            let json;
+            try {
+                json = JSON.parse(contents);
+                log(`JSON разобран, тип: ${typeof json}`, 'g');
+            } catch (parseError) {
+                log(`Ошибка при разборе JSON: ${parseError}`, 'r');
+                log(`Содержимое файла: ${contents}`, 'r');
+                throw new Error(`Файл содержит недопустимый JSON: ${parseError.message}`);
+            }
+            
+            // Check if it's an array
             if(!Array.isArray(json)) {
+                log(`Загруженный файл не является массивом. Тип: ${typeof json}, Значение: ${JSON.stringify(json).substring(0, 200)}`, 'r');
                 throw new Error('Файл должен содержать массив');
             }
             
             await updateFile(json, 'data/configs/autoResponse.json');
+            
+            // Reload autoRespData in chat module
+            try {
+                const { reloadAutoResponseData } = global.chat;
+                if (reloadAutoResponseData && typeof reloadAutoResponseData === 'function') {
+                    await reloadAutoResponseData();
+                }
+            } catch (reloadErr) {
+                log(`Ошибка перезагрузки данных автоответов: ${reloadErr}`, 'r');
+            }
+            
             ctx.replyWithHTML(`✅ Файл обновлён! Загружено: ${json.length} автоответов`, this.editAutoResponseKeyboard.reply());
         } catch (err) {
             log(`Ошибка обработки файла: ${err}`, 'r');
