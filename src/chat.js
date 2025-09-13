@@ -8,7 +8,22 @@ const { getRandomTag } = global.activity;
 
 // CONSTANTS
 const settings = global.settings;
-const autoRespData = await load('data/configs/autoResponse.json');
+let autoRespData = await load('data/configs/autoResponse.json');
+
+// Add error handling for autoRespData
+if (!autoRespData || !Array.isArray(autoRespData)) {
+    log(`Ошибка загрузки файла autoResponse.json. Файл будет создан с пустым массивом.`, 'r');
+    // Initialize with empty array if file doesn't exist or is invalid
+    await updateFile([], 'data/configs/autoResponse.json');
+    autoRespData = [];
+}
+
+// Add error handling for autoRespData
+if (!autoRespData) {
+    log(`Ошибка загрузки файла autoResponse.json. Файл будет создан с пустым массивом.`, 'r');
+    // Initialize with empty array if file doesn't exist or is invalid
+    await updateFile([], 'data/configs/autoResponse.json');
+}
 
 // Track sent messages to prevent self-response
 const sentMessages = new Set();
@@ -111,6 +126,21 @@ function calculateSimilarity(str1, str2) {
     
     const distance = matrix[len1][len2];
     return ((maxLen - distance) / maxLen) * 100;
+}
+
+// Function to reload autoRespData from file
+async function reloadAutoResponseData() {
+    try {
+        const newData = await load('data/configs/autoResponse.json');
+        if (newData && Array.isArray(newData)) {
+            autoRespData = newData;
+            log(`Файл autoResponse.json успешно перезагружен. Загружено ${autoRespData.length} автоответов.`, 'g');
+        } else {
+            log(`Ошибка перезагрузки autoResponse.json: неверный формат данных.`, 'r');
+        }
+    } catch (err) {
+        log(`Ошибка перезагрузки autoResponse.json: ${err}`, 'r');
+    }
 }
 
 // Check if pattern matches with fuzzy matching (65% threshold)
@@ -759,5 +789,6 @@ export {
     unpauseAutoResponseForUser,
     isUserPaused,
     getRemainingPauseTime,
-    getPausedUsersInfo
+    getPausedUsersInfo,
+    reloadAutoResponseData
 };
