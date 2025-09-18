@@ -331,7 +331,28 @@ class TelegramBot {
 
     isUserAuthed(ctx) {
         if(global.settings.userName == ctx.update.message.from.username) {
-            if(!getConst('chatId')) setConst('chatId', ctx.update.message.chat.id);
+            const chatId = ctx.update.message.chat.id;
+            // Always update the chat ID when an authorized user interacts with the bot
+            setConst('chatId', chatId);
+            
+            // Also save to file for persistence
+            try {
+                const fs = global.fs_extra;
+                const _dirname = process.cwd();
+                const telegramDir = `${_dirname}/data/other`;
+                
+                // Create directory if it doesn't exist
+                if (!fs.existsSync(telegramDir)) {
+                    fs.mkdirSync(telegramDir, { recursive: true });
+                }
+                
+                const telegramFilePath = `${telegramDir}/telegram.txt`;
+                fs.writeFileSync(telegramFilePath, chatId.toString(), 'utf8');
+                log(`Chat ID ${chatId} сохранен в файл ${telegramFilePath}`, 'g');
+            } catch (error) {
+                log(`Ошибка при сохранении Chat ID в файл: ${error}`, 'r');
+            }
+            
             return true;
         }
         return false;
@@ -676,19 +697,19 @@ class TelegramBot {
             let chatId = getConst('chatId');
             
             // If that fails, try to get from settings
-            if (!chatId && global.settings) {
+            if ((!chatId || chatId === "undefined" || chatId === "null") && global.settings) {
                 chatId = global.settings.chatId;
             }
             
             // If that also fails, try to read from telegram.txt file
-            if (!chatId) {
+            if (!chatId || chatId === "undefined" || chatId === "null") {
                 const fs = global.fs_extra;
                 const _dirname = process.cwd();
                 const telegramFilePath = `${_dirname}/data/other/telegram.txt`;
                 
                 if (fs.existsSync(telegramFilePath)) {
                     const fileContent = fs.readFileSync(telegramFilePath, 'utf8').trim();
-                    if (fileContent && !isNaN(fileContent)) {
+                    if (fileContent && !isNaN(fileContent) && fileContent !== "undefined" && fileContent !== "null") {
                         chatId = fileContent;
                     }
                 }
@@ -698,7 +719,7 @@ class TelegramBot {
             log(`Получение Chat ID: ${chatId}`, 'c');
             
             // Validate that it's a valid number
-            if (chatId && !isNaN(chatId)) {
+            if (chatId && !isNaN(chatId) && chatId !== "undefined" && chatId !== "null") {
                 return chatId;
             }
             
@@ -706,6 +727,357 @@ class TelegramBot {
             return false;
         } catch (error) {
             log(`Ошибка при получении Chat ID: ${error}`, 'r');
+            return false;
+        }
+    }
+
+    async sendNewMessageNotification(message) {
+        let msg = `💬 <b>Новое сообщение</b> от пользователя <b><i>${message.user}</i></b>.\n\n`;
+        msg += `${message.content}\n\n`;
+        msg += `<i>${message.time}</i> | <a href="https://funpay.com/chat/?node=${message.node}">Перейти в чат</a>`;
+
+        let chatId = this.getChatID();
+        if(!chatId) return;
+        
+        // Create unique reply command
+        const replyCommand = `/reply_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Store conversation info for reply functionality
+        this.activeChats.set(replyCommand, {
+            userName: message.user,
+            node: message.node,
+            time: Date.now()
+        });
+        
+        // Clean up old conversations (keep only last 50)
+        if(this.activeChats.size > 50) {
+            const oldEntries = Array.from(this.activeChats.keys()).slice(0, this.activeChats.size - 50);
+            oldEntries.forEach(key => this.activeChats.delete(key));
+        }
+        
+        // Create inline keyboard with reply and pause buttons
+        const replyKeyboard = {
+            inline_keyboard: [
+                [{
+                    text: `💬 Ответить ${message.user}`,
+                    callback_data: replyCommand
+                }],
+                [
+                    {
+                        text: `⏸️ Пауза 5м`,
+                        callback_data: `pause_${message.user}_5`
+                    },
+                    {
+                        text: `⏸️ Пауза 10м`,
+                        callback_data: `pause_${message.user}_10`
+                    },
+                    {
+                        text: `⏸️ Пауза 30м`,
+                        callback_data: `pause_${message.user}_30`
+                    }
+                ]
+            ]
+        };
+        
+        this.bot.telegram.sendMessage(chatId, msg, {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            reply_markup: replyKeyboard
+        });
+    }
+
+    async sendNewOrderNotification(order) {
+        let msg = `✔️ <b>Новый заказ</b> <a href="https://funpay.com/orders/${order.id.replace('#', '')}/">${order.id}</a> на сумму <b><i>${order.price} ${order.unit}</i></b>.\n\n`;
+        msg += `👤 <b>Покупатель:</b> <a href="https://funpay.com/users/${order.buyerId}/">${order.buyerName}</a>\n`;
+        msg += `🛍️ <b>Товар:</b> <code>${order.name}</code>`;
+
+        let chatId = this.getChatID();
+        log(`Попытка отправки уведомления о новом заказе ${order.id} в Telegram. Chat ID: ${chatId}`, 'c');
+        
+        // If we still don't have a chat ID, try to wait a bit and try again
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о заказе ${order.id}, повторная попытка через 1 секунду`, 'y');
+            // Wait 1 second and try again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            chatId = this.getChatID();
+        }
+        
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о заказе ${order.id}`, 'r');
+            // Try to get chat ID from global settings as fallback
+            if(global.settings && global.storage && global.storage.getConst) {
+                chatId = global.storage.getConst('chatId');
+                if(chatId) {
+                    log(`Получен Chat ID из резервного источника: ${chatId}`, 'c');
+                }
+            }
+            
+            if(!chatId) {
+                log(`Не удалось получить Chat ID ни из одного источника`, 'r');
+                return;
+            }
+        }
+        
+        try {
+            await this.bot.telegram.sendMessage(chatId, msg, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            });
+            log(`Уведомление о новом заказе ${order.id} успешно отправлено в Telegram`, 'g');
+            return true; // Return success status
+        } catch (error) {
+            log(`Ошибка при отправке уведомления о заказе ${order.id} в Telegram: ${error}`, 'r');
+            // Try to send a simplified message as fallback
+            try {
+                const simpleMsg = `Новый заказ ${order.id} от ${order.buyerName} на ${order.price} ${order.unit}`;
+                await this.bot.telegram.sendMessage(chatId, simpleMsg);
+                log(`Резервное уведомление о заказе ${order.id} успешно отправлено в Telegram`, 'g');
+                return true;
+            } catch (fallbackError) {
+                log(`Ошибка резервной отправки уведомления: ${fallbackError}`, 'r');
+                return false;
+            }
+        }
+    }
+
+    async sendLotsRaiseNotification(category, nextTimeMsg) {
+        let msg = `⬆️ Предложения в категории <a href="https://funpay.com/lots/${category.node_id}/trade">${category.name}</a> подняты.\n`;
+        msg += `⌚ Следующее поднятие: <b><i>${nextTimeMsg}</i></b>`;
+
+        let chatId = this.getChatID();
+        
+        // If we still don't have a chat ID, try to wait a bit and try again
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о поднятии лотов, повторная попытка через 1 секунду`, 'y');
+            // Wait 1 second and try again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            chatId = this.getChatID();
+        }
+        
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о поднятии лотов`, 'r');
+            return;
+        }
+        
+        this.bot.telegram.sendMessage(chatId, msg, {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true
+        });
+    }
+
+    async sendDeliveryNotification(buyerName, productName, message) {
+        let msg = `📦 Товар <code>${productName}</code> выдан покупателю <b><i>${buyerName}</i></b> с сообщением:\n\n`;
+        msg += `${message}`;
+
+        let chatId = this.getChatID();
+        log(`Попытка отправки уведомления о выдаче товара в Telegram. Chat ID: ${chatId}`, 'c');
+        
+        // If we still don't have a chat ID, try to wait a bit and try again
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о выдаче товара, повторная попытка через 1 секунду`, 'y');
+            // Wait 1 second and try again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            chatId = this.getChatID();
+        }
+        
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о выдаче товара`, 'r');
+            // Try to get chat ID from global settings as fallback
+            if(global.settings && global.storage && global.storage.getConst) {
+                chatId = global.storage.getConst('chatId');
+                if(chatId) {
+                    log(`Получен Chat ID из резервного источника: ${chatId}`, 'c');
+                }
+            }
+            
+            if(!chatId) {
+                log(`Не удалось получить Chat ID ни из одного источника`, 'r');
+                return;
+            }
+        }
+        
+        try {
+            await this.bot.telegram.sendMessage(chatId, msg, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            });
+            log(`Уведомление о выдаче товара успешно отправлено в Telegram`, 'g');
+        } catch (error) {
+            log(`Ошибка при отправке уведомления о выдаче товара в Telegram: ${error}`, 'r');
+            // Try to send a simplified message as fallback
+            try {
+                const simpleMsg = `Товар "${productName}" выдан покупателю ${buyerName}`;
+                await this.bot.telegram.sendMessage(chatId, simpleMsg);
+                log(`Резервное уведомление о выдаче товара успешно отправлено в Telegram`, 'g');
+            } catch (fallbackError) {
+                log(`Ошибка резервной отправки уведомления: ${fallbackError}`, 'r');
+            }
+        }
+    }
+    
+    // Handle callback queries from inline buttons
+    async onCallbackQuery(ctx) {
+        try {
+            const callbackData = ctx.callbackQuery.data;
+            
+            if(callbackData.startsWith('/reply_')) {
+                await this.startReplyToUser(ctx, callbackData);
+            }
+            else if(callbackData.startsWith('pause_')) {
+                await this.handleInlinePauseButton(ctx, callbackData);
+            }
+            
+            // Answer callback query to remove loading state
+            ctx.answerCbQuery();
+        } catch (err) {
+            log(`Ошибка при обработке callback query: ${err}`, 'r');
+            ctx.answerCbQuery('Ошибка при обработке запроса');
+        }
+    }
+    
+    // Start reply process to a FunPay user
+    async startReplyToUser(ctx, replyCommand) {
+        try {
+            const chatInfo = this.activeChats.get(replyCommand);
+            
+            if(!chatInfo) {
+                ctx.reply('❌ Сообщение устарело или недоступно.');
+                return;
+            }
+
+            // Check if conversation is not too old (24 hours)
+            const age = Date.now() - chatInfo.time;
+            if(age > 24 * 60 * 60 * 1000) {
+                ctx.reply('❌ Сообщение слишком старое. Ответ недоступен.');
+                this.activeChats.delete(replyCommand);
+                return;
+            }
+
+            this.waitingForReply = true;
+            this.currentReplyInfo = chatInfo;
+
+            const cancelKeyboard = {
+                keyboard: [[
+                    { text: '❌ Отменить ответ' }
+                ]],
+                resize_keyboard: true,
+                one_time_keyboard: true
+            };
+
+            ctx.reply(
+                `💬 Отвечаю пользователю <b>${chatInfo.userName}</b>\n\nНапишите сообщение для отправки:`,
+                {
+                    parse_mode: 'HTML',
+                    reply_markup: cancelKeyboard
+                }
+            );
+
+            // Clean up the reply command from activeChats
+            this.activeChats.delete(replyCommand);
+        } catch (err) {
+            log(`Ошибка при начале ответа: ${err}`, 'r');
+            ctx.reply('❌ Ошибка при начале ответа.');
+        }
+    }
+
+    // Handle reply message from user
+    async handleReplyMessage(ctx) {
+        try {
+            const msg = ctx.update.message.text;
+
+            if(msg === '❌ Отменить ответ') {
+                this.waitingForReply = false;
+                this.currentReplyInfo = null;
+                ctx.reply('❌ Ответ отменён.', this.mainKeyboard.reply());
+                return;
+            }
+
+            if(!this.currentReplyInfo) {
+                ctx.reply('❌ Ошибка: информация о чате не найдена.', this.mainKeyboard.reply());
+                this.waitingForReply = false;
+                return;
+            }
+
+            // Send message to FunPay with manual watermark (different from auto-response watermark)
+            const { sendMessage } = global.chat;
+            const success = await sendMessage(this.currentReplyInfo.node, msg, false, 'manual');
+
+            if(success) {
+                ctx.reply(
+                    `✅ Сообщение отправлено пользователю <b>${this.currentReplyInfo.userName}</b>!`,
+                    {
+                        parse_mode: 'HTML',
+                        ...this.mainKeyboard.reply()
+                    }
+                );
+
+                // Reset reply state
+                this.waitingForReply = false;
+                this.currentReplyInfo = null;
+            } else {
+                ctx.reply(
+                    `❌ Не удалось отправить сообщение пользователю <b>${this.currentReplyInfo.userName}</b>.`,
+                    {
+                        parse_mode: 'HTML',
+                        ...this.mainKeyboard.reply()
+                    }
+                );
+            }
+        } catch (err) {
+            log(`Ошибка при отправке ответа: ${err}`, 'r');
+            ctx.reply('❌ Ошибка при отправке ответа.', this.mainKeyboard.reply());
+            this.waitingForReply = false;
+            this.currentReplyInfo = null;
+        }
+    }
+
+    // Handle inline pause buttons
+    async handleInlinePauseButton(ctx, callbackData) {
+        try {
+            const parts = callbackData.split('_');
+            if(parts.length !== 3) return;
+
+            const userName = parts[1];
+            const minutes = parseInt(parts[2]);
+
+            if(isNaN(minutes)) return;
+
+            // Pause auto-responses for this user
+            const { pauseUser } = global.chat;
+            pauseUser(userName, minutes * 60 * 1000); // Convert minutes to milliseconds
+
+            // Update button text to show it's been pressed
+            const newInlineKeyboard = {
+                inline_keyboard: [
+                    [{
+                        text: `✅ ${userName} поставлен в паузу на ${minutes} мин`,
+                        callback_data: 'noop'
+                    }]
+                ]
+            };
+
+            ctx.editMessageReplyMarkup(newInlineKeyboard);
+
+            log(`Пользователь ${userName} поставлен в паузу на ${minutes} минут через Telegram`, 'g');
+        } catch (err) {
+            log(`Ошибка при обработке кнопки паузы: ${err}`, 'r');
+        }
+    }
+
+    // Add method to send a test message to verify chat ID
+    async sendTestMessage() {
+        const chatId = this.getChatID();
+        if(chatId) {
+            try {
+                await this.bot.telegram.sendMessage(chatId, '✅ Тестовое сообщение от FunPayServer. Chat ID работает корректно.');
+                log('Тестовое сообщение успешно отправлено', 'g');
+                return true;
+            } catch (error) {
+                log(`Ошибка при отправке тестового сообщения: ${error}`, 'r');
+                return false;
+            }
+        } else {
+            log('Не удалось отправить тестовое сообщение: недействительный Chat ID', 'r');
             return false;
         }
     }
@@ -773,6 +1145,14 @@ class TelegramBot {
         let chatId = this.getChatID();
         log(`Попытка отправки уведомления о новом заказе ${order.id} в Telegram. Chat ID: ${chatId}`, 'c');
         
+        // If we still don't have a chat ID, try to wait a bit and try again
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о заказе ${order.id}, повторная попытка через 1 секунду`, 'y');
+            // Wait 1 second and try again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            chatId = this.getChatID();
+        }
+        
         if(!chatId) {
             log(`Не удалось получить Chat ID для отправки уведомления о заказе ${order.id}`, 'r');
             // Try to get chat ID from global settings as fallback
@@ -816,7 +1196,20 @@ class TelegramBot {
         msg += `⌚ Следующее поднятие: <b><i>${nextTimeMsg}</i></b>`;
 
         let chatId = this.getChatID();
-        if(!chatId) return;
+        
+        // If we still don't have a chat ID, try to wait a bit and try again
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о поднятии лотов, повторная попытка через 1 секунду`, 'y');
+            // Wait 1 second and try again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            chatId = this.getChatID();
+        }
+        
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о поднятии лотов`, 'r');
+            return;
+        }
+        
         this.bot.telegram.sendMessage(chatId, msg, {
             parse_mode: 'HTML',
             disable_web_page_preview: true
@@ -829,6 +1222,14 @@ class TelegramBot {
 
         let chatId = this.getChatID();
         log(`Попытка отправки уведомления о выдаче товара в Telegram. Chat ID: ${chatId}`, 'c');
+        
+        // If we still don't have a chat ID, try to wait a bit and try again
+        if(!chatId) {
+            log(`Не удалось получить Chat ID для отправки уведомления о выдаче товара, повторная попытка через 1 секунду`, 'y');
+            // Wait 1 second and try again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            chatId = this.getChatID();
+        }
         
         if(!chatId) {
             log(`Не удалось получить Chat ID для отправки уведомления о выдаче товара`, 'r');
