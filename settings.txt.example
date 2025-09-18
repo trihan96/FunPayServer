@@ -1,0 +1,116 @@
+[FunPay]
+# Settings for FunPay bot
+
+# Authorization key for FunPay.
+# Get it using the Edit This Cookie browser extension.
+golden_key: your_golden_key_here
+
+# Browser user-agent. Must match the browser where golden_key was obtained
+# You can get it here: https://wtools.io/ru/check-my-user-agent
+user_agent: your_user_agent_here
+
+# Always online. [1 - enable, 0 - disable]
+alwaysOnline: 1
+
+# Auto-raise lots. [1 - enable, 0 - disable]
+lotsRaise: 1
+
+# Auto-activate lots after sale. [1 - enable, 0 - disable]
+goodsStateCheck: 0
+
+# Auto-delivery of goods. [1 - enable, 0 - disable]
+autoDelivery: 1
+
+# Auto-response. [1 - enable, 0 - disable]
+autoResponse: 1
+
+# Welcome message for new customers. [1 - enable, 0 - disable]
+greetingMessage: 0
+
+# Welcome message text for new customers. 
+# Use \n for line breaks.
+# Available variables: {name} - customer name.
+greetingMessageText: Hello, {name}!\nThe seller will respond to your message shortly.
+
+# Command to test auto-delivery. [1 - enable, 0 - disable]
+autoDeliveryTestCommand: 0
+
+# Follow-up message after purchase. [1 - enable, 0 - disable]
+followUpMessage: 1
+
+# Follow-up message text after purchase.
+# Available variables: {order_id} - order ID.
+followUpMessageText: Thank you for your purchase!🌟\nAfter all checks, please go to purchases and click "confirm order" at the link — https://funpay.com/orders/{order_id}/
+
+# Text sent at the beginning of each bot message in chat.
+# Leave empty if you don't want to use this feature.
+waterMark: [ 🔥NightBot ]
+
+# Text sent at the beginning of manual responses via Telegram.
+# Leave empty if you don't want to use this feature.
+telegramWaterMark:
+
+# Enable Google Sheets for FAQ. [1 - enable, 0 - disable]
+googleSheetsFAQEnabled: 0
+
+# Google Sheets ID
+googleSheetsId:
+
+# Path to Google Sheets service account credentials file
+googleSheetsServiceAccountPath: config/service-account-key.json
+
+# Cell range in the sheet (default A:B)
+googleSheetsRange: A:B
+
+# API key for Gemini AI (optional, for enhanced responses)
+googleSheetsGeminiApiKey:
+
+# Google Sheets ID for feedback (optional, for saving complex questions)
+googleSheetsFeedbackId:
+
+
+[Telegram]
+# Telegram bot settings
+
+# Enable bot. [1 - enable, 0 - disable]
+enabled: 0
+
+# Bot token. Get it from @BotFather
+token: your_bot_token_here
+
+# Telegram admin username without @. Needed for bot authentication.
+userName: YourTelegramLogin
+
+# Notification for new messages. [1 - enable, 0 - disable]
+newMessageNotification: 1
+
+# Notification for new orders. [1 - enable, 0 - disable]
+newOrderNotification: 1
+
+# Notification for lot raises. [1 - enable, 0 - disable]
+lotsRaiseNotification: 1
+
+# Notification for goods delivery. [1 - enable, 0 - disable]
+deliveryNotification: 1
+
+
+[Proxy]
+# Proxy settings
+
+# Enable proxy. [1 - enable, 0 - disable]
+enabled: 0
+
+# Proxy host
+host:
+
+# Proxy port
+port:
+
+# Proxy login (if any)
+login:
+
+# Proxy password (if any)
+pass: 
+
+# Proxy type. [http]
+type: http
